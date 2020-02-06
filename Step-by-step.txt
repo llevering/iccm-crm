@@ -1,0 +1,413 @@
+# Install Laravel
+# cli
+composer global require laravel/installer
+
+laravel new iccm-crm
+
+# Make it available
+# cli
+php artisan serve --host [ip]
+
+# Create empty database file
+# cli
+mkdir storage/database
+touch storage/database/sqlite.db
+
+# Set up database, for demo purposes sqlite
+# .env
+DB_CONNECTION=sqlite
+DB_DATABASE=/home/llevering/Documents/Bedrijf/iccm/2020/iccm-crm/storage/sqlite.db
+
+# Test if it is working
+# cli
+php artisan migrate
+
+# Pull in some ui scaffolding
+# cli
+composer require laravel/ui --dev
+php artisan ui bootstrap --auth
+
+# Create a model for our sponsors
+php artisan make:model -m Sponsor
+
+# Add columns to the model
+$table->string("name");
+$table->string("address");
+$table->string("town");
+$table->string("mail_address")->nullable();
+$table->string("phone_number")->nullable();
+
+# To create the table with the defined columns, we have to run the migration tool again
+php artisan migrate
+
+# Let us create fake sponsors for testing purposes
+php artisan make:seeder SponsorTableSeeder
+
+# Now we want to make use of Facade called faker, but the ide doesn't provide autocompletion, let's fake that
+composer require --dev barryvdh/laravel-ide-helper
+php artisan ide-helper:generate
+php artisan ide-helper:models
+php artisan ide-helper:meta
+
+# Let's create a resource controller to let the user easily interact with the model
+php artisan make:controller SponsorController --resource --model=Sponsor
+
+# Content of database/seeds/SponsorTableSeeder.php
+$faker = \Faker\Factory::create();
+
+for($i = 0; $i < 50; $i++)
+{
+    DB::table('sponsors')->insert([
+        'name' => $faker->name,
+        'address' => $faker->address,
+        'town' => $faker->city,
+        'mail_address' => $faker->email,
+        'phone_number' => $faker->phoneNumber
+    ]);
+}
+
+# Add the seeder to DatabaseSeeder.php
+$this->call(SponsorTableSeeder::class);
+
+# Let's list all the sponsors from the table
+$sponsors = Sponsor::all();
+
+return response($sponsors);
+
+# But how to navigate to this controller and specific function?
+# A resource route in routes/web.php
+Route::resource('sponsor', 'SponsorController');
+
+# Check routes in artisan
+php artisan route:list
+
+# So it is availabe from /sponsor,let have a look
+
+# It works, but unauthenticated access is still possible
+# Let fix this by checking with middleware
+Route::middleware(["auth"])->group(function() {
+    // Add resource route here
+});
+
+# Logout and check!
+
+# Now let's make the link available from the gui
+# Blade view are found /resources
+# Let's edit /resources/views/layout/app.blade.php
+# Add a link to left menu:
+<a href="{{route("sponsor.index")}}" class="nav-link">Sponsors</a>
+
+# Now let's make a decent view of the index, we start in the SponsorController index function:
+$sponsors = Sponsor::all();
+
+return response()->view('sponsor.index', ['sponsors' => $sponsors]);
+
+# Create a folders sponsor and a file index.blade.php in it put
+@extends('layouts.app')
+
+@section('content')
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">Sponsors</div>
+
+                    <div class="card-body">
+                        Index to be
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+@endsection
+
+# Let build the index with a foreach in blade iterating over the sponsors
+<table class="table">
+    <thead>
+        <tr>
+            <th>
+
+            </th>
+            <th>
+                Name
+            </th>
+            <th>
+                Address
+            </th>
+            <th>
+                Town
+            </th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach($sponsors as $sponsor)
+            <tr>
+                <td>
+
+                </td>
+                <td>
+                    {{$sponsor->name}}
+                </td>
+                <td>
+                    {{$sponsor->address}}
+                </td>
+                <td>
+                    {{$sponsor->town}}
+                </td>
+            </tr>
+        @endforeach
+    </tbody>
+</table>
+
+# Sort the list in the index function replace Sponsor::all()
+$sponsors = Sponsor::orderBy('name')->get();
+
+# Let's add icons to make edit and delete routes available, let's use the empty first column for that
+# A lot going on here, explain the use of this form, explain @method and @csrf
+<form action="{{ route('sponsor.destroy', ['sponsor' => $sponsor]) }}" method="POST">
+    @method('DELETE')
+    @csrf
+
+    <div class="btn-group">
+        <a href="{{route("sponsor.edit", ['sponsor' => $sponsor])}}" class="btn btn-primary">Edit</a>
+        <input type="submit" class="btn btn-danger" value="Remove">
+    </div>
+</form>
+
+# Implement delete in SponsorController -> destroy(), with depency injection
+$sponsor->delete();
+
+return redirect()->route('sponsor.index')->with("message", "Removed sponsor \"" . $sponsor->name . "\" successfully");
+
+# Add the message to the top of the index
+@if (session('message'))
+    <div class="alert alert-success">
+        {{ session('message') }}
+    </div>
+@endif
+
+# Make the sponsor editable, add edit.blade.php
+@extends('layouts.app')
+
+@section('content')
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">Sponsors</div>
+
+                    <div class="card-body">
+                        @if (session('message'))
+                            <div class="alert alert-success">
+                                {{ session('message') }}
+                            </div>
+                        @endif
+
+                        <form action="{{route("sponsor.update", $sponsor)}}" method="POST">
+                            @csrf
+                            @method('put')
+
+                            <div class="form-group">
+                                <label for="name">Name</label>
+                                <input name="name" value="{{old('name', $sponsor->name)}}" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="address">Address</label>
+                                <input name="address" value="{{old('address', $sponsor->address)}}" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="town">Town</label>
+                                <input name="town" value="{{old('town', $sponsor->town)}}" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="mail_address">Mail address</label>
+                                <input name="mail_address" value="{{old('mail_address', $sponsor->mail_address)}}" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="phone_number">Phone number</label>
+                                <input name="phone_number" value="{{old('phone_number', $sponsor->phone_number)}}" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <input type="submit" value="Save" class="btn btn-primary">
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+@endsection
+
+# And persist the chanages in the update() method
+$sponsor->update($request->all());
+$sponsor->save();
+
+return redirect()->route('sponsor.edit', ['sponsor' => $sponsor])->with('message', 'Update stored successfully');
+
+# But when we try to update we get an error...
+# Mass assignment fails, what to do... Add to Sponsor model
+protected $fillable = [
+    'name',
+    'address',
+    'town',
+    'mail_address',
+    'phone_number'
+];
+// $guarded is the opposite of $fillable, sometimes more convenient
+
+# Now let's empty a field and save... that goes wrong
+# Let's validate with a form request
+# CLI:
+php artisan make:request SponsorRequest
+
+# Rules to validate by can be found on: https://laravel.com/docs/5.8/validation#available-validation-rules
+class SponsorRequest extends FormRequest
+{
+    /**
+     * Determine if the user is authorized to make this request.
+     *
+     * @return bool
+     */
+    public function authorize()
+    {
+        return true;
+    }
+
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array
+     */
+    public function rules()
+    {
+        return [
+            'name' => 'required|max:255',
+            'address' => 'required|max:255',
+            'town' => 'required|max:255',
+            'mail_address' => 'email|nullable',
+        ];
+    }
+}
+
+# Change 'Request' in the update function to 'SponsorRequest' (and add import as: use App\Http\Requests\SponsorRequest;)
+
+# That's working, but let the user know what is happening, add to edit.blade.php
+@if ($errors->any())
+    <div class="alert alert-danger">
+        <ul>
+        @foreach($errors->all() as $error)
+            <li>{{$error}}</li>
+        @endforeach
+        </ul>
+    </div>
+@endif
+
+# Creating new users is the only thing missing to make the application crud complete
+# First add a new button to index.blade.php
+<div class="btn-group" style="padding-bottom: 1em;">
+    <a href="{{route('sponsor.create')}}" class="btn btn-primary">Create new sponsor</a>
+</div>
+
+# Let's re-use the edit view...
+$sponsor = new Sponsor();
+
+return response()->view('sponsor.edit', ['sponsor' => $sponsor]);
+
+# But won't work, we need some changes
+# 1. Use another route for create/update
+# 2. Use just post method, not put/patch for update
+# The view can tell an update and a create action apart by looking at the (missing) id
+# So overwrite <form...> @method('put') in edit.blade.php with
+@if($sponsor->id)
+<form action="{{route("sponsor.update", $sponsor)}}" method="POST">
+    @method('put')
+@else
+<form action="{{route("sponsor.store")}}" method="POST">
+@endif
+
+# Now we only need to implement the insert in store function
+public function store(SponsorRequest $request)
+{
+    $sponsor = Sponsor::create($request->validated());
+
+    return response()->view('sponsor.edit', ['sponsor' => $sponsor]);
+}
+
+# A little eloquent with relations goodness to top it all of...
+# Let's make another table with a seeder
+# CLI:
+php artisan make:model -m Donation
+php artisan make:seeder DonationsTableSeeder
+
+# Fill migration
+Schema::create('donations', function (Blueprint $table) {
+    $table->bigIncrements('id');
+    $table->integer('sponsor_id')->unsigned();
+    $table->date('date');
+    $table->decimal('amount')->unsigned();
+    $table->timestamps();
+
+    $table->foreign('sponsor_id')->references('id')->on('sponsors');
+});
+
+# Fill seeder
+$faker = \Faker\Factory::create();
+
+$sponsors = \App\Sponsor::all()->pluck('id')->toArray();
+
+for($i = 0; $i < 200; $i++)
+{
+    DB::table('donations')->insert([
+        'sponsor_id' => $faker->randomElement($sponsors),
+        'date' => $faker->dateTimeThisCentury(),
+        'amount' => $faker->numberBetween(5, 250)
+    ]);
+}
+
+# Add seeder tot DatabaseSeeder.php
+$this->call(DonationsTableSeeder::class);
+
+# Seed
+# CLI
+php artisan db:seed
+
+# So lets see the power of eloquent
+# Add the relation to the models
+# Sponsor.php
+public function donations()
+{
+    return $this->hasMany('App\\Donation');
+}
+
+# Donation.php
+public function sponsor()
+{
+    return $this->belongsTo('App\\Sponsor');
+}
+
+# We will show in the index the number of donations per sponsor
+# index.blade.php
+# Add extra header
+<th>#-of donations</th>
+
+# Extra column
+<td>
+    {{$sponsor->donations->count()}}
+</td>
+
+# Still not convinced? ;)
+# Total amount of donations
+# Add extra header
+<th>Total donated amount</th>
+
+# Extra column
+<td>
+    {{$sponsor->donations->sum('amount')}}
+</td>
+
+# List to long? Paginate
+# Change in the SponsorController -> index function
+$sponsors = Sponsor::orderBy('name')->paginate(15);
+
+# Add to index.blade.php
+{{$sponsors->links()}}
